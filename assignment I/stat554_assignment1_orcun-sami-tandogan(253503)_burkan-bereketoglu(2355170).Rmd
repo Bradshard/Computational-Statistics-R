@@ -1,0 +1,243 @@
+---
+title: "R Notebook"
+output: html_notebook
+author: 
+  - Orcun Sami Tandogan, METU
+  - Burkan Bereketoglu, METU
+---
+
+# Q1 
+# Outline
+# 1.A-) Infficient 
+# 1.B-) Efficient
+# 1.C-) Comparision & Result
+Question asks for two different user-defined functions. There are two different ways to generate random variable from Wishart Distributions. First one is simplistic approach in which you directly compute by creating whole matrix. Second way is Barlett`s method in which you creating matrix without upper triangular. Even both of them uses Choleski factorization, Bartlett is more efficient. 
+```{r} 
+# Inefficient 
+wish.inefficient <- function( n = 3, df, sigma = diag(3) ){  
+  # Defining empty list for all distributions to store
+  M.list <- c() 
+  # Implementation of Choleski Factorization 
+  Q <- chol(sigma) # t(Q) %*% Q == sigma
+  # Finding dimension of it
+  d <- ncol(sigma) 
+  for(i in 1:n){ 
+  # Creation of matrix with variables in respect to degrees of freedom defined
+  Z <- matrix(rnorm(df*d), nrow = df, ncol = d) 
+  X <- Z %*% Q + matrix(mu=0, df, d, byrow = TRUE) 
+  
+  M <- t(X) %*% X
+  # Storing current matrix to main list
+  M.list[[i]] <- M 
+  
+  }
+  return(M.list) 
+} 
+# Code of Simplistic Approach
+wish.inefficient( n = 3, df = 10 , sigma = diag(6) ) 
+```
+
+# Efficient
+# Barrtlet`s decomposition
+```{r} 
+set.seed(100)  
+
+wish.efficient <- function( n, df,sigma ){
+  # Defining empty list for all distributions to store
+  M.list <- c() 
+  # L is lower triangular and we are defining it by  Choleski factorization
+  L <- t(chol(sigma))  
+  # Aim: To get related distribution which has values at lower triangular 
+  temp <- diag(dim(sigma)[1])  
+  # len.lower & len.diag are here for how many lower triangular variables we need to create
+  len.lower <- length( temp[lower.tri(temp)] )  
+  len.diag <- dim(sigma)[1] 
+  
+  for(i in 1:n){
+  # We define random variables for A matrix
+    # Lower triangular
+    temp[lower.tri(temp)] <- rnorm( len.lower ) 
+    # Diagonal Part
+  for (j in 1:len.diag) { 
+   temp[j, j] <- sqrt(rchisq(1, df - i + 1))
+   } 
+  A <- t(temp) %*% (temp) # A = T^T T 
+  M.list[[i]] <- L %*% A %*% t(L) 
+  }
+  return(M.list) 
+} 
+
+wish.efficient( n=3, df= 50 , sigma = diag(6) )   
+``` 
+
+
+# Comparision 
+### In conclusion, results are like the expected. Bartlett is more efficient than inefficient, however, Bartlett is so slower than model package. 
+```{r} 
+N <- 2000 #iterations
+system.time(for (i in 1:N) 
+  rWishart(n= 10, df = 50 ,Sigma = diag(6) ) )   
+
+system.time(for (i in 1:N) 
+  wish.inefficient( n = 10, df = 50 , sigma = diag(6)) ) 
+
+system.time(for (i in 1:N) 
+  wish.efficient( n=10, df= 50 , sigma = diag(6) )  ) 
+``` 
+
+# Q2
+```{r}
+# Rayleigh distribution function itself to represent it
+# 
+rayleigh <- function(u,sigma){
+  1-exp(-(u**2)/(2*(sigma**2)))
+}
+# inverse function of rayleigh distribution which will be used in the inverse transformation sampling.
+
+# this can be either done by uniroot() or directly by
+# analytically solving for inverse.
+rayleigh_inverse <- function(y,sigma){
+  sigma*(-2*log(1-y))**(0.5)
+}
+
+# generate 1000 random uniforms
+unif <- runif(1000)
+
+# set distribution parameter sigma
+sigma <- 1 # scale to 1
+
+# generate random variables
+ray <- sapply(unif,rayleigh_inverse, sigma = sigma)
+
+cdf <- ecdf(ray) # making cdf of the rayleigh
+t <- seq(0, 6, .001) # create a value set with .001 step size
+plot(cdf)
+
+hist(ray, prob = TRUE, xlim = c(0,7),xlab= "values" ,ylab = "Density")
+lines(t, (t/sigma^2)*exp((-t^2)/(2*sigma^2))) # apply the value set to the function in lines.
+
+``` 
+
+# Q3 
+# Outline
+# Functions for f(x) / Triangular & g(x) / Uniform
+
+Here for to create our probability density function for our f(x) or f(y) which is triangular distribution and it is expected from us to get random variables from envelope uniform and beta in two different instances and develop a function such that returns a triangular distribution with given a and b, which are respectively 0 and 1.
+```{r}
+# f(y)
+tri.pdf <- function(a=0,c,b=1,x){
+  if(x>a & x<c){ 2*(x-a)/((b-a)*(c-a)) }
+  else if(x>=c &x<b){ (2*(b-x))/((b-a)*(b-c)) }
+  else{0}
+}
+
+# g(y)
+unf.pdf <- function(a=0,b=1){
+  return(1/(b-a))
+}
+```
+
+
+We used tri.r to randomly generate some values just to see what are our values and understand them.
+```{r}
+tri.r <- function(a,c,b){ 
+  fc <- (c-a) / (b-a) 
+  u <- runif(1) 
+  if(fc > u){a + sqrt(u*(b-a)*(c-a)) }
+  else if(u>=fc){b-sqrt(1-u)*(b-a)*(b-c)}
+} 
+tri.r(a=0,c=0.5,b=1) 
+```
+
+
+tri.uni stands for the triangular distribution with uniform envelope distribution, one issue we ran into is we assumed c rather than finding it with proper mathematical calculations, we by trial and error approximated the c value and used that c value in our function. Here m value is not random but rather at the m point our x = m f(x) = 2 so we used 2 as m which is the peak point.
+```{r}
+tri.uni <- function(n=100000, m = 2){
+k <- 0 #counter for accepted
+j <- 0 #iterations
+y <- numeric(n)
+
+while (k < n) {
+u <- runif(1) # random uniform once.
+j <- j + 1
+x <- runif(1) #random variate from g 
+# For acceptance-rejection method, we need to filter out variates according to `u < f(x) /g(x)*c` value. 
+# As g(x) is equal to 1 thanks to b and a are also equal to 1, only parameter we are changing is m which is the c in the formula. We want to keep these values between 0 and 1. 
+if ( u < tri.pdf(a=0,b=1, c=0.07, x=x) / m ) { 
+#we accept x
+k <- k + 1
+y[k] <- x
+}
+}
+y
+} 
+
+hist(sort(tri.uni())) 
+
+``` 
+
+
+In here we took average of end values to approximate c and with that we also used an m value which gave us the most value with trial and error of many values that is close to 1 in 0.00001 decimal error scale, tolerance level.
+```{r}
+tri.beta <- function(n=100000, m = 5.129){ 
+k <- 0 #counter for accepted
+j <- 0 #iterations
+y <- numeric(n)
+
+while (k < n) {
+u <- runif(1)
+j <- j + 1
+x <- rbeta(1,2,2) #random variate from g 
+# For acceptance-rejection method, we need to filter out variates according to `u < f(x) /g(x)*c` value. 
+# our c value is the `m`. We assumed alpha and beta are equal to 2 as it allows taking more space. 
+# These alpha and beta values can be changed according to Triangular plots to fit more, but c of the triangular should also be selected wisely. 
+if ( u < tri.pdf(a=0,b=1, c=0.5, x=x) / (dbeta(x,2,2)*m) ) { 
+#we accept x
+k <- k + 1
+y[k] <- x
+}
+}
+y
+}
+
+hist(sort(tri.beta())) 
+
+``` 
+
+
+Here we test the computational efficiencies of uniform and beta distribution random generated triangular distribution. At the end we end up with uniform version the tri.uni is much better with 43.44 time score compared to tri.beta 153.23 time elapsed.
+``` {r}
+N <- 50 #iterations
+system.time(for (i in 1:N) 
+  tri.uni() )
+  
+system.time(for (i in 1:N) 
+  tri.beta() )
+
+```
+# References
+[1]M. L. Rizzo, Statistical computing with R. Boca Raton: Chapman &amp; Hall/CRC, 2008. 
+
+[2]“Rayleigh random variable,” Rayleigh Random Variable - an overview | ScienceDirect Topics. [Online]. Available: https://www.sciencedirect.com/topics/mathematics/rayleigh-random-variable. [Accessed: 01-May-2022]. 
+
+[3] P. R. Wilkinson, “Multivariate statistics,” 7.2 The Wishart distribution. [Online]. Available: https://rich-d-wilkinson.github.io/MATH3030/7-2-the-wishart-distribution.html. [Accessed: 01-May-2022]. 
+
+[4] James Mitch, “Derivation of rayleigh-distributed random variable,” Cross Validated, 01-Oct-1960. [Online]. Available: https://stats.stackexchange.com/questions/47361/derivation-of-rayleigh-distributed-random-variable. [Accessed: 01-May-2022]. 
+
+[5] “Rayleighv - Mathematics | William &amp; Mary.” [Online]. Available: http://www.math.wm.edu/~leemis/chart/UDR/PDFs/RayleighV.pdf. [Accessed: 01-May-2022]. 
+
+[6] The inverse-transform method for generating random variables in R. [Online]. Available: https://heds.nz/posts/inverse-transform/. [Accessed: 01-May-2022]. 
+
+[7]“Tutorial,” Yacas. [Online]. Available: https://yacas.readthedocs.io/en/latest/tutorial/index.html#threading-of-functions. [Accessed: 01-May-2022]. 
+
+[8] “Inverse transform sampling,” Wikipedia, 15-Feb-2022. [Online]. Available: https://en.wikipedia.org/wiki/Inverse_transform_sampling. [Accessed: 01-May-2022]. 
+
+[9] Stephanie, “Acceptance-rejection sampling: Plain English definition / overview,” Statistics How To, 10-Dec-2020. [Online]. Available: https://www.statisticshowto.com/acceptance-rejection-sampling/#:~:text=Acceptance%2DRejection%20sampling%20is%20a,rejected%3B%20the%20rest%20are%20accepted. [Accessed: 01-May-2022]. 
+
+[10] “Numpy.random.triangular,” numpy.random.triangular - NumPy v1.22 Manual. [Online]. Available: https://numpy.org/doc/stable/reference/random/generated/numpy.random.triangular.html. [Accessed: 01-May-2022]. 
+
+[11] zheng017/SC19062 source: R/Wishart.R. [Online]. Available: https://rdrr.io/github/zheng017/SC19062/src/R/Wishart.R. [Accessed: 01-May-2022]. 
+
+[12] D. R. Parker, “R lecture notes,” Chapter 13 Simulations, 31-Aug-2020. [Online]. Available: https://users.phhp.ufl.edu/rlp176/Courses/PHC6089/R_notes/simulations.html. [Accessed: 01-May-2022]. 
+
+[13] “1 acceptance-rejection method - Columbia University.” [Online]. Available: http://www.columbia.edu/~ks20/4703-Sigman/4703-07-Notes-ARM.pdf. [Accessed: 01-May-2022]. 
